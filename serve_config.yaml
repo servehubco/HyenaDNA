@@ -1,0 +1,31 @@
+# This file was generated using the `serve build` command on Ray v2.6.2.
+
+proxy_location: EveryNode
+
+http_options:
+
+  host: 0.0.0.0
+
+  port: 8000
+
+applications:
+
+- name: app1
+
+  route_prefix: /
+
+  import_path: esm_fold:deployment
+
+  runtime_env:
+#    working_dir: "https://bioml-tasks-agent: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@github.com/bioml-tasks-repos/esm/archive/refs/heads/main.zip"
+    working_dir: "https://bioml-tasks-agent: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@github.com/bioml-tasks-repos/esm/archive/259a93c308cc356f36701f21498d4c535b16a1ef.zip"
+    pip:
+      - python-multipart
+
+
+  deployments:
+
+  - name: MyFastAPIDeployment
+    ray_actor_options:
+      num_cpus: 7.0
+      num_gpus: 1.0

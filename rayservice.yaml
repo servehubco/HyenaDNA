@@ -1,0 +1,132 @@
+# Make sure to increase resource requests and limits before using this example in production.
+# For examples with more realistic resource configuration, see
+# ray-cluster.complete.large.yaml and
+# ray-cluster.autoscaler.large.yaml.
+apiVersion: ray.io/v1alpha1
+kind: RayService
+metadata:
+  name: esmfold
+spec:
+  serviceUnhealthySecondThreshold: 300 # Config for the health check threshold for service. Default value is 60.
+  deploymentUnhealthySecondThreshold: 660 # 11 minutes - takes 10 minutes for the image to download # Config for the health check threshold for deployments. Default value is 60.
+  # serveConfigV2 takes a yaml multi-line scalar, which should be a Ray Serve multi-application config. See https://docs.ray.io/en/latest/serve/multi-app.html.
+  # Only one of serveConfig and serveConfigV2 should be used.
+  serveConfigV2: |
+    applications:
+
+      - name: default
+  
+        route_prefix: /
+  
+        import_path: esm_fold:deployment
+  
+        runtime_env:
+          working_dir: "https://bioml-tasks-agent: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@github.com/bioml-tasks-repos/esm/archive/e42c0e6b40a2f1a5592f204ce7fc5972b1744770.zip"
+          pip:
+            - python-multipart
+        deployments:
+          - name: MyFastAPIDeployment
+            ray_actor_options:
+              num_cpus: 7.0
+              num_gpus: 1.0
+  rayClusterConfig:
+    rayVersion: '2.6.1' # should match the Ray version in the image of the containers
+    enableInTreeAutoscaling: true # enable in-tree autoscaling
+    # autoscalerOptions is an OPTIONAL field specifying configuration overrides for the Ray autoscaler.
+    # The example configuration shown below below represents the DEFAULT values.
+    # (You may delete autoscalerOptions if the defaults are suitable.)
+    autoscalerOptions:
+      # upscalingMode is "Default" or "Aggressive."
+      # Conservative: Upscaling is rate-limited; the number of pending worker pods is at most the size of the Ray cluster.
+      # Default: Upscaling is not rate-limited.
+      # Aggressive: An alias for Default; upscaling is not rate-limited.
+      upscalingMode: Default
+      # idleTimeoutSeconds is the number of seconds to wait before scaling down a worker pod which is not using Ray resources.
+      idleTimeoutSeconds: 600
+      # image optionally overrides the autoscaler's container image.
+      # If instance.spec.rayVersion is at least "2.0.0", the autoscaler will default to the same image as
+      # the ray container. For older Ray versions, the autoscaler will default to using the Ray 2.0.0 image.
+      ## image: "my-repo/my-custom-autoscaler-image:tag"
+      # imagePullPolicy optionally overrides the autoscaler container's default image pull policy (IfNotPresent).
+      imagePullPolicy: IfNotPresent
+      # Optionally specify the autoscaler container's securityContext.
+      securityContext: { }
+      # env and envFrom: These fields specify autoscaler container environment variables. These fields should be formatted following the Kubernetes API for container environment variables.
+      env: [ ]
+      envFrom: [ ]
+      # resources specifies optional resource request and limit overrides for the autoscaler container.
+      # The default autoscaler resource limits and requests should be sufficient for production use-cases.
+      # However, for large Ray clusters, we recommend monitoring container resource usage to determine if overriding the defaults is required.
+      resources:
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+    ######################headGroupSpecs#################################
+    # Ray head pod template.
+    headGroupSpec:
+      # The `rayStartParams` are used to configure the `ray start` command.
+      # See https://github.com/ray-project/kuberay/blob/master/docs/guidance/rayStartParams.md for the default settings of `rayStartParams` in KubeRay.
+      # See https://docs.ray.io/en/latest/cluster/cli.html#ray-start for all available options in `rayStartParams`.
+      rayStartParams:
+        dashboard-host: '0.0.0.0'
+      #pod template
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: vivkr/esmfold:latest
+              resources:
+                limits:
+                  cpu: "0"
+                  memory: "8Gi"
+                requests:
+                  cpu: "0"
+                  memory: "8Gi"
+              ports:
+                - containerPort: 6379
+                  name: gcs-server
+                - containerPort: 8265 # Ray dashboard
+                  name: dashboard
+                - containerPort: 10001
+                  name: client
+                - containerPort: 8000
+                  name: serve
+          tolerations:
+            - key: "node-group/ray-head"
+              operator: "Exists"
+              effect: "NoSchedule"
+    workerGroupSpecs:
+      # the pod replicas in this group typed worker
+      - replicas: 1
+        minReplicas: 0
+        maxReplicas: 1
+        # logical group name, for this called small-group, also can be functional
+        groupName: regular-node
+        # The `rayStartParams` are used to configure the `ray start` command.
+        # See https://github.com/ray-project/kuberay/blob/master/docs/guidance/rayStartParams.md for the default settings of `rayStartParams` in KubeRay.
+        # See https://docs.ray.io/en/latest/cluster/cli.html#ray-start for all available options in `rayStartParams`.
+        rayStartParams: { }
+        #pod template
+        template:
+          spec:
+            containers:
+              - name: ray-worker # must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc'
+                image: vivkr/esmfold:latest
+                lifecycle:
+                  preStop:
+                    exec:
+                      command: [ "/bin/sh","-c","ray stop" ]
+                resources:
+                  limits:
+                    cpu: "7"
+                    memory: "30Gi"
+                    nvidia.com/gpu: "1"
+                    ephemeral-storage: "60Gi"
+                  requests:
+                    cpu: "7"
+                    memory: "30Gi"
+                    nvidia.com/gpu: "1"
+                    ephemeral-storage: "60Gi"
